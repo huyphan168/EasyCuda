@@ -54,7 +54,7 @@ int main()
    * `a` that can be used on both the host and the device.
    */
 
-  a = (int *)malloc(size);
+  cudaMallocManaged(&a, size);
 
   init(a, N);
 
@@ -77,5 +77,5 @@ int main()
    * accessed by both the host and the device.
    */
 
-  free(a);
+  cudaFree(a);
 }
