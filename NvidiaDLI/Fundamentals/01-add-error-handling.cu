@@ -48,14 +48,21 @@ int main()
 
   init(a, N);
 
-  size_t threads_per_block = 2048;
+  size_t threads_per_block = 1024;
   size_t number_of_blocks = 32;
 
   doubleElements<<<number_of_blocks, threads_per_block>>>(a, N);
   cudaDeviceSynchronize();
-
+  
   bool areDoubled = checkElementsAreDoubled(a, N);
   printf("All elements were doubled? %s\n", areDoubled ? "TRUE" : "FALSE");
 
   cudaFree(a);
+
+  //Checking errors
+  cudaError_t err;
+  err = cudaGetLastError();
+  if (err != cudaSuccess){
+    printf("Error: %s\n", cudaGetErrorString(err));
+  }
 }
