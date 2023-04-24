@@ -18,34 +18,22 @@ typedef struct { float x, y, z, vx, vy, vz; } Body;
  * on all others.
  */
 
-__global__
-void bodyForce(Body *p, float dt, int n){
-  unsigned int index = threadIdx.x + blockDim.x * blockIdx.x;
-  float Fx = 0.0f; float Fy = 0.0f; float Fz = 0.0f;
-  if (0 < index < n){
+void bodyForce(Body *p, float dt, int n) {
+  for (int i = 0; i < n; ++i) {
+    float Fx = 0.0f; float Fy = 0.0f; float Fz = 0.0f;
+
     for (int j = 0; j < n; j++) {
-      float dx = p[j].x - p[index].x;
-      float dy = p[j].y - p[index].y;
-      float dz = p[j].z - p[index].z;
+      float dx = p[j].x - p[i].x;
+      float dy = p[j].y - p[i].y;
+      float dz = p[j].z - p[i].z;
       float distSqr = dx*dx + dy*dy + dz*dz + SOFTENING;
       float invDist = rsqrtf(distSqr);
       float invDist3 = invDist * invDist * invDist;
 
       Fx += dx * invDist3; Fy += dy * invDist3; Fz += dz * invDist3;
     }
-    p[index].vx += dt*Fx; p[index].vy += dt*Fy; p[index].vz += dt*Fz;
-  }
-}
 
-
-
-__global__ 
-void integration(Body *p, float dt, int nBodies){
-  int index = threadIdx.x + blockDim.x * blockIdx.x;
-  if (index < nBodies){
-    p[index].x += p[index].vx*dt;
-    p[index].y += p[index].vy*dt;
-    p[index].z += p[index].vz*dt;
+    p[i].vx += dt*Fx; p[i].vy += dt*Fy; p[i].vz += dt*Fz;
   }
 }
 
@@ -79,19 +67,13 @@ int main(const int argc, const char** argv) {
   int bytes = nBodies * sizeof(Body);
   float *buf;
 
-  cudaMallocManaged(&buf, bytes);
+  buf = (float *)malloc(bytes);
+
   Body *p = (Body*)buf;
 
   read_values_from_file(initialized_values, buf, bytes);
 
-  // Cuda variables
-  int deviceId;
-  cudaGetDevice(&deviceId);
-  int numberOfSMs;
-  cudaDeviceGetAttribute(&numberOfSMs, cudaDevAttrMultiProcessorCount, deviceId);
-
   double totalTime = 0.0;
-  cudaMemPrefetchAsync(p, bytes ,deviceId);
 
   /*
    * This simulation will run for 10 cycles of time, calculating gravitational
@@ -105,22 +87,23 @@ int main(const int argc, const char** argv) {
    * You will likely wish to refactor the work being done in `bodyForce`,
    * and potentially the work to integrate the positions.
    */
-    unsigned int numberThreads = 256;
-    unsigned int numberBlocks = ((nBodies / numberThreads) / numberOfSMs + 1)*numberOfSMs;
 
-    bodyForce<<<numberBlocks, numberThreads>>>(p, dt, nBodies); // compute interbody forces
-    cudaDeviceSynchronize();
+    bodyForce(p, dt, nBodies); // compute interbody forces
+
   /*
    * This position integration cannot occur until this round of `bodyForce` has completed.
    * Also, the next round of `bodyForce` cannot begin until the integration is complete.
    */
-    integration<<<numberBlocks, numberThreads>>>(p, dt, nBodies);
-    cudaDeviceSynchronize();
+
+    for (int i = 0 ; i < nBodies; i++) { // integrate position
+      p[i].x += p[i].vx*dt;
+      p[i].y += p[i].vy*dt;
+      p[i].z += p[i].vz*dt;
+    }
 
     const double tElapsed = GetTimer() / 1000.0;
     totalTime += tElapsed;
   }
-  cudaMemPrefetchAsync(p, bytes, cudaCpuDeviceId);
 
   double avgTime = totalTime / (double)(nIters);
   float billionsOfOpsPerSecond = 1e-9 * nBodies * nBodies / avgTime;
@@ -131,5 +114,5 @@ int main(const int argc, const char** argv) {
   // unrealistically high values.
   printf("%0.3f Billion Interactions / second\n", billionsOfOpsPerSecond);
 
-  cudaFree(buf);
+  free(buf);
 }
