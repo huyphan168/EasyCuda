@@ -5,16 +5,19 @@
 
 __global__ void matrix_multiply_kernel(const float* A, const float* B, float* C, int M, int N, int K) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-    if (index < M){
-        for (int i = index; i < M; i+=stride){
-            for (int k = 0; k < K; ++k){
-                for (int j = 0; j < N; ++j){
-                    C[i*K + k] += A[i*N + j] * B[j*K + k];
-                }
-            }
+
+    while (index < M * K) {
+        int row = index / K;
+        int col = index % K;
+
+        float value = 0;
+        for (int i = 0; i < N; i++) {
+            value += A[row * N + i] * B[i * K + col];
         }
-    } 
+
+        C[row * K + col] = value;
+        index += blockDim.x * gridDim.x;
+    }
 }
 
 __global__ void matrix_vector_multiply_kernel(const float* A, const float* B, float*C, int M, int N){
@@ -59,7 +62,7 @@ torch::Tensor parallelMatMul_cuda(torch::Tensor A, torch::Tensor B, int T, int T
         return C;
 	}
 	if (A.dim() == 1 && B.dim() == 2){
-		A.unsqueeze(0);
+		A = A.unsqueeze(0);
 		int M = A.size(-2);
 		int N = A.size(-1);
 		int K = B.size(-1);
